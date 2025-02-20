@@ -9,7 +9,6 @@ app = Flask(__name__)
 
 
 def evaluar_funcion(funcion_str, x_val):
-    """Convierte la función ingresada en una expresión evaluable."""
     x = sp.Symbol('x')
     try:
         funcion_sympy = sp.sympify(funcion_str)
@@ -19,65 +18,38 @@ def evaluar_funcion(funcion_str, x_val):
         return None
 
 
-def biseccion(funcion_str, a, b, tol=1e-6, max_iter=100):
-    """Método de bisección con validación de intervalo y almacenamiento de iteraciones."""
+def falsa_posicion(funcion_str, a, b, tol=1e-6, max_iter=100):
     try:
         f = lambda x: evaluar_funcion(funcion_str, x)
         if f(a) is None or f(b) is None:
             return {"error": "La función ingresada no es válida."}
         if f(a) * f(b) >= 0:
-            return {"error": "El método de bisección no es aplicable en este intervalo."}
+            return {"error": "El método de falsa posición no es aplicable en este intervalo. Asegúrate de que f(a) y f(b) tengan signos opuestos."}
 
         iteraciones = []
-        c = a
+        xr = a
         prev_xr = None
 
         for i in range(1, max_iter + 1):
-            c = (a + b) / 2
-            if prev_xr is not None and c != 0:
-                error = abs((c - prev_xr) / c) * 100
+            xr = (a * f(b) - b * f(a)) / (f(b) - f(a))
+            if prev_xr is not None and xr != 0:
+                error = abs((xr - prev_xr) / xr) * 100
             else:
-                error = 0  # Evita NaN cuando prev_xr es None o c es 0
+                error = 0
 
-            iteraciones.append([i, a, c, b, error, f(c)])
-            prev_xr = c
+            iteraciones.append([i, a, xr, b, error, f(xr)])
+            prev_xr = xr
 
-            if abs(f(c)) < tol or (b - a) / 2 < tol:
+            if abs(f(xr)) < tol:
                 break
 
-            if f(c) * f(a) < 0:
-                b = c
+            if f(xr) * f(a) < 0:
+                b = xr
             else:
-                a = c
+                a = xr
 
         df_iteraciones = pd.DataFrame(iteraciones, columns=["Iteración", "a", "Xr", "b", "Error %", "F(Xr)"])
-        return {"raiz": c, "iteraciones": df_iteraciones.to_dict(orient="records")}
-    except Exception as e:
-        return {"error": str(e)}
-
-
-def newton_raphson(funcion_str, x0, tol=1e-6, max_iter=100):
-    """Método de Newton-Raphson para encontrar raíces."""
-    try:
-        x = sp.Symbol('x')
-        funcion_sympy = sp.sympify(funcion_str)
-        derivada = sp.diff(funcion_sympy, x)
-        f = sp.lambdify(x, funcion_sympy, 'numpy')
-        df = sp.lambdify(x, derivada, 'numpy')
-
-        iteraciones = []
-        for i in range(1, max_iter + 1):
-            if df(x0) == 0:
-                return {"error": "Derivada cero. No se puede aplicar Newton-Raphson."}
-            x1 = x0 - f(x0) / df(x0)
-            error = abs((x1 - x0) / x1) * 100
-            iteraciones.append([i, x0, x1, error, f(x1)])
-            if error < tol:
-                break
-            x0 = x1
-
-        df_iteraciones = pd.DataFrame(iteraciones, columns=["Iteración", "Xn", "Xn+1", "Error %", "F(Xn+1)"])
-        return {"raiz": x1, "iteraciones": df_iteraciones.to_dict(orient="records")}
+        return {"raiz": xr, "iteraciones": df_iteraciones.to_dict(orient="records")}
     except Exception as e:
         return {"error": str(e)}
 
@@ -96,8 +68,13 @@ def calcular():
     b = float(data.get("b"))
     tol = float(data.get("tol"))
 
+    if a == b:
+        return jsonify({"error": "Los valores de a y b no pueden ser iguales."})
+
     if metodo == "newton":
         resultado = newton_raphson(funcion, a, tol)
+    elif metodo == "falsa_posicion":
+        resultado = falsa_posicion(funcion, a, b, tol)
     else:
         resultado = biseccion(funcion, a, b, tol)
 
@@ -126,6 +103,8 @@ def exportar(formato):
                 pdf.cell(40, 10, str(value), border=1)
             pdf.ln()
         pdf.output(file_path)
+    elif formato == "xlsx":
+        df.to_excel(file_path, index=False)
 
     return jsonify({"archivo": file_path})
 
